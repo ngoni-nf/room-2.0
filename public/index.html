@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Room 2.0 - Room Booking System</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Arial', sans-serif; background: #f5f5f5; }
+    .header { background: #2c3e50; color: white; padding: 20px; text-align: center; }
+    .container { max-width: 1200px; margin: 20px auto; padding: 20px; }
+    .search-section { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .search-section input, .search-section select { padding: 10px; margin: 10px; border: 1px solid #ddd; border-radius: 4px; }
+    .rooms-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+    .room-card { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.3s; }
+    .room-card:hover { transform: translateY(-5px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .room-image { width: 100%; height: 200px; background: #e0e0e0; display: flex; align-items: center; justify-content: center; color: #999; }
+    .room-details { padding: 15px; }
+    .room-name { font-size: 18px; font-weight: bold; margin-bottom: 10px; }
+    .room-info { font-size: 14px; color: #666; margin: 5px 0; }
+    .room-price { font-size: 20px; font-weight: bold; color: #27ae60; margin-top: 10px; }
+    .btn { padding: 10px 20px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; }
+    .btn:hover { background: #2980b9; }
+    #map { width: 100%; height: 500px; margin-top: 20px; border-radius: 8px; }
+    .map-container { background: white; padding: 20px; border-radius: 8px; margin-top: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Room 2.0 - Premium Room Booking</h1>
+    <p>Find and book the perfect room for your needs</p>
+  </div>
+
+  <div class="container">
+    <div class="search-section">
+      <h2>Search Rooms</h2>
+      <input type="text" id="searchInput" placeholder="Search by location...">
+      <select id="capacityFilter">
+        <option value="">All Capacities</option>
+        <option value="1">1 Person</option>
+        <option value="2">2 People</option>
+        <option value="4">4 People</option>
+        <option value="6">6+ People</option>
+      </select>
+      <button class="btn" onclick="searchRooms()">Search</button>
+    </div>
+
+    <div id="roomsList" class="rooms-grid"></div>
+
+    <div class="map-container">
+      <h2>Room Locations</h2>
+      <div id="map"></div>
+    </div>
+  </div>
+
+  <script>
+    let map;
+    let markers = [];
+    const API_BASE = 'http://localhost:5000/api';
+
+    function initMap() {
+      map = new google.maps.Map(document.getElementById('map'), {
+        zoom: 12,
+        center: { lat: -26.2, lng: 28.0 } // Johannesburg center
+      });
+      loadRooms();
+    }
+
+    async function loadRooms() {
+      try {
+        const response = await fetch(`${API_BASE}/rooms`);
+        const rooms = await response.json();
+        displayRooms(rooms);
+        displayMarkers(rooms);
+      } catch (error) {
+        console.error('Error loading rooms:', error);
+        document.getElementById('roomsList').innerHTML = '<p>Failed to load rooms. Check console for details.</p>';
+      }
+    }
+
+    function displayRooms(rooms) {
+      const roomsList = document.getElementById('roomsList');
+      if (!rooms || rooms.length === 0) {
+        roomsList.innerHTML = '<p>No rooms found.</p>';
+        return;
+      }
+      roomsList.innerHTML = rooms.map(room => `
+        <div class="room-card">
+          <div class="room-image">📍 ${room.location || 'Location'}</div>
+          <div class="room-details">
+            <div class="room-name">${room.name || 'Unnamed Room'}</div>
+            <div class="room-info">Location: ${room.location || 'N/A'}</div>
+            <div class="room-info">Capacity: ${room.capacity || 'N/A'} people</div>
+            <div class="room-info">Amenities: ${room.amenities ? room.amenities.join(', ') : 'None'}</div>
+            <div class="room-price">R${room.price || '0'}/night</div>
+            <button class="btn" onclick="bookRoom('${room.id}')">Book Now</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function displayMarkers(rooms) {
+      markers.forEach(marker => marker.setMap(null));
+      markers = [];
+      
+      rooms.forEach(room => {
+        if (room.coordinates && room.coordinates.lat && room.coordinates.lng) {
+          const marker = new google.maps.Marker({
+            position: { lat: room.coordinates.lat, lng: room.coordinates.lng },
+            map: map,
+            title: room.name,
+            infoWindow: new google.maps.InfoWindow({
+              content: `<div><strong>${room.name}</strong><br>${room.location}<br>R${room.price}/night</div>`
+            })
+          });
+          marker.addListener('click', () => {
+            marker.infoWindow.open(map, marker);
+          });
+          markers.push(marker);
+        }
+      });
+    }
+
+    function searchRooms() {
+      const search = document.getElementById('searchInput').value.toLowerCase();
+      const capacity = document.getElementById('capacityFilter').value;
+      
+      fetch(`${API_BASE}/rooms`)
+        .then(res => res.json())
+        .then(rooms => {
+          const filtered = rooms.filter(room => {
+            const matchesSearch = !search || (room.location && room.location.toLowerCase().includes(search)) || (room.name && room.name.toLowerCase().includes(search));
+            const matchesCapacity = !capacity || room.capacity >= parseInt(capacity);
+            return matchesSearch && matchesCapacity;
+          });
+          displayRooms(filtered);
+          displayMarkers(filtered);
+        });
+    }
+
+    function bookRoom(roomId) {
+      alert('Booking feature coming soon for room: ' + roomId);
+    }
+
+    // Initialize map when page loads
+    window.addEventListener('load', initMap);
+  </script>
+  <script async defer src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY"></script>
+</body>
+</html>
